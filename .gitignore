@@ -1,0 +1,42 @@
+# Installed dependencies and generated files
+.venv/
+.lelab-venv/
+venv/
+node_modules/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.tsbuildinfo
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+certs/
+
+# Hardware-specific calibration, connection details, and diagnostic output
+/calibration/
+/*.json
+/lelab-config-backup/
+*.backup.json
+*.log
+*.pid
+/lelab-startup-sample.txt
+*.zip
+*.tmp
+
+# Editor and operating-system files
+.DS_Store
+._*
+.idea/
+.vscode/
+*.swp
+*.swo

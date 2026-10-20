@@ -1,0 +1,3 @@
+# Same LeRobot revision used by the bundled LeLab checkout.
+lerobot[feetech] @ git+https://github.com/huggingface/lerobot.git@30da8e687a6dfc617fcd94afc367ac7071c376ce
+feetech-servo-sdk==1.0.0
