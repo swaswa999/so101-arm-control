@@ -8,9 +8,9 @@ class Tests(unittest.TestCase):
   c=self.controller();self.assertIsNone(c.hw)
   with patch.object(m,'Motor') as cls:
    h=cls.return_value;h.close.return_value=[]
-   c.controls({'direction':1});h.write.assert_called_with(1,46,2000)
-   c.controls({'direction':-1});h.write.assert_called_with(1,46,32768+2000)
-   self.assertIn(((1,46,0),),h.write.call_args_list)
+   c.controls({'direction':1});h.write.assert_called_with(8,46,2000)
+   c.controls({'direction':-1});h.write.assert_called_with(8,46,32768+2000)
+   self.assertIn(((8,46,0),),h.write.call_args_list)
    c.controls({'direction':0});h.close.assert_called_once();self.assertIsNone(c.hw)
  def test_failed_connection_is_closed(self):
   c=self.controller()
