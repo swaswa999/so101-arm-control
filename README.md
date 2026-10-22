@@ -1,7 +1,7 @@
 # SO101 Arm Control
 
 SO-101 leader/follower arm teleoperation with a local browser interface, a
-hold-to-run socket tool, jaw calibration, and a customized LeLab interface.
+click-to-run socket tool, jaw calibration, and a customized LeLab interface.
 
 The current controller is `mayter_teleop/app.py`. It tracks the leader arm and
 controls one STS3215 socket motor at ID **8**, using a **1,000,000 baud** bus.
@@ -99,3 +99,8 @@ These tests mock serial operations and do not move the arm.
 LeLab and LeRobot are Hugging Face projects. The included LeLab code retains its
 Apache 2.0 license in `lelab/LICENSE`; see `THIRD_PARTY.md` for its source revision
 and the local modifications.
+
+Socket controls: click **Forward · Max speed** or **Reverse · Max speed** to run
+at the configured controller maximum of 2000 velocity units. **Stop socket**
+stops just the tool. Page blur, hiding the page, and a stale heartbeat also stop
+the tool. Physical speed depends on the motor, voltage, and load.

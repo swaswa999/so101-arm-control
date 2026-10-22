@@ -1,4 +1,4 @@
-"""Direct arm teleop and one hold-to-run socket motor. Tire motor disconnected."""
+"""Direct arm teleop and one click-to-run socket motor. Tire motor disconnected."""
 import json,queue,threading,time,urllib.request,atexit,shutil,datetime
 from pathlib import Path
 from concurrent.futures import Future
