@@ -1,0 +1,17 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Loose motor</title>
+<style>body{font:18px system-ui;background:#101722;color:#e9eef5;max-width:700px;margin:60px auto;padding:24px}p{line-height:1.5;color:#b9c6d8}.buttons{display:flex;gap:16px;flex-wrap:wrap}button{font:inherit;flex:1;padding:26px;border:1px solid #61728a;border-radius:12px;background:#265b9a;color:white;cursor:pointer}button[aria-pressed=true]{background:#237b55}button:disabled{opacity:.4}#stop{background:#a92e3e;margin-top:20px;width:100%}#error{color:#ffb6b6}</style>
+<h1>Loose motor · ID 1</h1><p>Only the loose motor should be connected. Click a direction to keep spinning at the controller maximum (2000).</p>
+<div class="buttons"><button id="forward" onclick="spin(1)" disabled aria-pressed="false">Forward · Max speed</button><button id="reverse" onclick="spin(-1)" disabled aria-pressed="false">Reverse · Max speed</button></div><button id="stop" onclick="stopMotor()">Stop</button>
+<p id="status" role="status">Connecting…</p><p id="error" role="alert"></p><p>Switching away from this page or losing connection stops the motor. Escape also stops it.</p>
+<script>
+let direction=0,ready=false,sending=false;
+const el=id=>document.getElementById(id);
+function render(){for(const [id,d] of [['forward',1],['reverse',-1]]){el(id).disabled=!ready;el(id).setAttribute('aria-pressed',String(direction===d))}}
+async function post(path,data){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});const body=await r.json();if(!r.ok)throw Error(body.error||'Motor command failed');return body}
+async function beat(){if(sending||!ready)return;sending=true;try{await post('/controls',{direction})}catch(e){direction=0;el('error').textContent=e.message;render()}finally{sending=false}}
+function spin(d){if(!ready)return;direction=d;el('error').textContent='';render();beat()}
+function stopMotor(){direction=0;render();beat()}
+async function poll(){try{const s=await(await fetch('/status')).json();ready=s.controller_version==='loose-motor-1-20261022';el('status').textContent=!ready?'Controller restart required':s.mode==='running'?(s.speed>0?'Forward':'Reverse')+' · Running':'Stopped';if(s.error){direction=0;el('error').textContent=s.error}}catch(e){ready=false;direction=0;el('status').textContent='Disconnected'}render()}
+window.addEventListener('blur',stopMotor);document.addEventListener('visibilitychange',()=>{if(document.hidden)stopMotor()});document.addEventListener('keydown',e=>{if(e.code==='Escape')stopMotor()});
+setInterval(()=>{if(!document.hidden)beat()},100);setInterval(poll,500);poll();
+</script></html>

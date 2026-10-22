@@ -104,3 +104,11 @@ Socket controls: click **Forward · Max speed** or **Reverse · Max speed** to r
 at the configured controller maximum of 2000 velocity units. **Stop socket**
 stops just the tool. Page blur, hiding the page, and a stale heartbeat also stop
 the tool. Physical speed depends on the motor, voltage, and load.
+
+## Loose motor panel
+
+`Mayter Teleop.command` now opens the standalone ID 1 panel. Connect only the
+loose STS3215 motor. Forward/Reverse start it at the configured maximum of
+2000 velocity units; Stop, page blur, and a 350 ms heartbeat timeout stop it.
+It uses no leader, arm tracking, or jaw calibration. The motor ID stays 1.
+The original arm controller remains available at `mayter_teleop/app.py`.
