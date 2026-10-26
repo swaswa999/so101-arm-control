@@ -1,11 +1,11 @@
-"""Direct arm teleop, two tool motors, and bounded jaw calibration steps."""
+"""Direct arm teleop, two tool motors, and hold-to-run jaw calibration."""
 import json,queue,threading,time,urllib.request,atexit,shutil,datetime,os
 from pathlib import Path
 from concurrent.futures import Future,TimeoutError
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 ROOT=Path(__file__).resolve().parent.parent
 FOLLOWER='/dev/cu.usbmodem5C821107831';LEADER='/dev/cu.usbmodem5C821101051'
-CONTROLLER_VERSION='two-tools-jaw-jog-20261025'
+CONTROLLER_VERSION='two-tools-jaw-hold-20261025'
 TOOL_IDS={'tire':7,'socket':8}
 
 _arm_support=None
@@ -48,7 +48,7 @@ def jaw_calibration(closed,opened,old):
  return {**old,'id':6,'range_min':min(closed,opened)+8,'range_max':max(closed,opened)-8,'drive_mode':int(closed>opened)}
 
 class Hardware:
- def __init__(self):self.follower=None;self.leader=None;self.port=None;self.packet=None;self.raw=False;self.tool_ids_checked=set();self.jaw_settings=None;self.jaw_deadline=0.;self.jaw_origin=None
+ def __init__(self):self.follower=None;self.leader=None;self.port=None;self.packet=None;self.raw=False;self.tool_ids_checked=set();self.jaw_settings=None;self.jaw_active=False;self.jaw_origin=None;self.jaw_progress=None;self.jaw_progress_time=0.
  def idle_lelab(self):
   for endpoint,key in [('teleoperation-status','teleoperation_active'),('recording-status','recording_active'),('inference-status','inference_active')]:
    try:
@@ -113,25 +113,31 @@ class Hardware:
  def release_jaw(self):
   self.write(6,40,0,1)
   if self.read(6,40,1)!=0:raise RuntimeError('Jaw torque off could not be verified')
-  self.jaw_deadline=0.
- def jog_jaw(self,direction):
-  if direction not in (-1,1):raise ValueError('Invalid jaw step')
+  self.jaw_active=False
+ def update_jaw(self,last_heartbeat,direction=0):
+  if direction not in (-1,0,1):raise ValueError('Invalid jaw direction')
+  if time.monotonic()-last_heartbeat>=.35:direction=0
+  if not direction:
+   if self.jaw_active:self.release_jaw()
+   return self.read(6,56)
   if self.jaw_settings is None:raise ValueError('Begin jaw calibration first')
-  if self.jaw_deadline:raise ValueError('Wait for the current jaw step to finish')
   current=self.read(6,56);target=current+direction*10
-  if not 0<=target<=4095 or abs(target-self.jaw_origin)>2048:raise ValueError('Jaw step would cross the calibration travel limit')
-  self.release_jaw()
-  # Temporary calibration limits allow finding endpoints beyond the old range.
-  # Original registers are backed up and restored when calibration ends.
-  self.write(6,55,0,1)
-  for address,value,size in [(9,0,2),(11,4095,2),(33,0,1),(41,10,1),(48,150,2),(46,100,2),(42,current,2)]:self.write(6,address,value,size)
-  self.write(6,55,1,1)
-  self.write(6,40,1,1);self.jaw_deadline=time.monotonic()+.6
+  if not 0<=target<=4095 or abs(target-self.jaw_origin)>2048:
+   self.release_jaw();raise RuntimeError('Jaw travel limit reached. Release the button and review the endpoint.')
+  if not self.jaw_active:
+   self.release_jaw();self.write(6,55,0,1)
+   # Advance only a small distance ahead of the measured position while held.
+   # Original settings are backed up and restored when calibration ends.
+   for address,value,size in [(9,0,2),(11,4095,2),(33,0,1),(41,10,1),(48,150,2),(46,100,2),(42,current,2)]:self.write(6,address,value,size)
+   self.write(6,55,1,1)
+   self.write(6,40,1,1);self.jaw_active=True
+   self.jaw_progress=current;self.jaw_progress_time=time.monotonic()
+  elif abs(current-self.jaw_progress)>=3:
+   self.jaw_progress=current;self.jaw_progress_time=time.monotonic()
+  elif time.monotonic()-self.jaw_progress_time>=.6:
+   self.release_jaw();raise RuntimeError('Jaw stopped progressing. Release the button and check for binding.')
   self.write(6,42,target)
-  return target
- def update_jaw(self,last_heartbeat):
-  if self.jaw_deadline and (time.monotonic()>=self.jaw_deadline or time.monotonic()-last_heartbeat>=.35):self.release_jaw()
-  return self.read(6,56)
+  return current
  def connect_teleop(self):
   SO101Follower,SO101FollowerConfig,SO101Leader,SO101LeaderConfig=arm_support()
   self.idle_lelab()
@@ -214,7 +220,7 @@ class Hardware:
 
 class Controller:
  def __init__(self):
-  self.q=queue.Queue();self.lock=threading.Lock();self.held={name:0 for name in TOOL_IDS};self.last_heartbeat=0.;self.hw=None
+  self.q=queue.Queue();self.lock=threading.Lock();self.held={name:0 for name in TOOL_IDS};self.last_heartbeat=0.;self.hw=None;self.jaw_direction=0
   self.status={'controller_version':CONTROLLER_VERSION,'mode':'idle','error':None,'stop_error':None,'hz':0,'socket_speed':0,'tire_speed':0,'jaw_target':None,'connection_check':None,'jaw_position':None,'jaw_closed':None,'jaw_open':None}
   threading.Thread(target=self.run,daemon=True,name='motor-owner').start()
  def snapshot(self):
@@ -232,9 +238,12 @@ class Controller:
    if direction not in (-1,0,1):raise ValueError('Invalid tool direction')
    if not 50<=speed<=2000:raise ValueError('Tool speed must be 50–2000')
    held[name]=direction;held[name+'_speed']=speed
-  with self.lock:self.held=held;self.last_heartbeat=time.monotonic()
+  jaw_direction=int(d.get('jaw',0))
+  if jaw_direction not in (-1,0,1):raise ValueError('Invalid jaw direction')
+  if jaw_direction and self.status['mode']!='jaw_calibrating':raise ValueError('Begin jaw calibration first')
+  with self.lock:self.held=held;self.jaw_direction=jaw_direction;self.last_heartbeat=time.monotonic()
  def stop(self):
-  with self.lock:self.held={name:0 for name in TOOL_IDS}
+  with self.lock:self.held={name:0 for name in TOOL_IDS};self.jaw_direction=0
   errors=[]
   if self.hw and self.status['mode']=='jaw_calibrating':
    try:self.hw.write(6,40,0,1)
@@ -256,19 +265,19 @@ class Controller:
    self.hw=Hardware();self.hw.connect_cal();self.hw.prepare_jaw()
    self.last_heartbeat=time.monotonic()
    self.status.update(mode='jaw_calibrating',error=None,jaw_closed=None,jaw_open=None)
-  elif a in ('jaw_minus','jaw_plus','jaw_release'):
+  elif a=='jaw_release':
    if self.status['mode']!='jaw_calibrating':raise ValueError('Begin jaw calibration first')
-   if a=='jaw_release':self.hw.release_jaw();self.status['jaw_target']=None
-   else:
-    if time.monotonic()-self.last_heartbeat>=.35:raise ValueError('Control page heartbeat expired')
-    self.status['jaw_target']=self.hw.jog_jaw(-1 if a=='jaw_minus' else 1)
+   with self.lock:self.jaw_direction=0
+   self.hw.release_jaw();self.status['jaw_target']=None
   elif a in ('jaw_closed','jaw_open'):
    if self.status['mode']!='jaw_calibrating':raise ValueError('Begin jaw calibration first')
+   with self.lock:self.jaw_direction=0
    self.hw.release_jaw();self.status['jaw_target']=None
    self.status[a]=self.hw.read(6,56)
   elif a=='jaw_save':
    if self.status['mode']!='jaw_calibrating':raise ValueError('Begin jaw calibration first')
    if self.status['jaw_closed'] is None or self.status['jaw_open'] is None:raise ValueError('Mark closed and open positions first')
+   with self.lock:self.jaw_direction=0
    self.hw.release_jaw()
    path=ROOT/'calibration/follower/hiwonder_follower_fresh.json'
    data=json.loads(path.read_text());old=data['gripper'];new=jaw_calibration(self.status['jaw_closed'],self.status['jaw_open'],old)
@@ -289,7 +298,7 @@ class Controller:
   elif a in ('start','tools'):
    if self.status['mode']!='idle':raise ValueError('Stop the current session first')
    if a=='start':arm_support()
-   with self.lock:self.held={name:0 for name in TOOL_IDS}
+   with self.lock:self.held={name:0 for name in TOOL_IDS};self.jaw_direction=0
    self.hw=Hardware()
    if a=='tools':self.hw.connect_tools()
    else:self.hw.connect_teleop()
@@ -308,8 +317,9 @@ class Controller:
      except ValueError as e:self.status['error']=str(e);f.set_exception(e)
      except Exception as e:self.status['error']=str(e);self.stop();f.set_exception(e)
     if self.status['mode']=='jaw_calibrating':
-     self.status['jaw_position']=self.hw.update_jaw(self.last_heartbeat)
-     if not self.hw.jaw_deadline:self.status['jaw_target']=None
+     with self.lock:direction=self.jaw_direction;last=self.last_heartbeat
+     self.status['jaw_position']=self.hw.update_jaw(last,direction)
+     self.status['jaw_target']=self.status['jaw_position']+direction*10 if self.hw.jaw_active else None
     elif self.status['mode'] in ('teleop','tools'):
      with self.lock:held=dict(self.held);last=self.last_heartbeat
      if tick-last>1.0:raise RuntimeError('Control page disconnected; teleoperation stopped')

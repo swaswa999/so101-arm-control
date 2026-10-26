@@ -108,13 +108,19 @@ Forward and Reverse run until that tool's Stop button is clicked. Page blur,
 hiding the page, or a stale heartbeat stops both tools. **Stop and release
 motors** ends the session and releases torque.
 
-For jaw calibration, choose **Begin jaw calibration**, then **− Small step** or
-**+ Small step**. Each click requests 10 encoder ticks (about 0.9 degrees), with
-a reduced torque limit of 150 and a speed setting of 100. Torque releases after
-0.6 seconds, on a stale heartbeat, or when **Release jaw** is clicked. Direction
-labels refer to encoder direction, since open/closed direction depends on the
-mechanism. Stop before binding; software tests do not establish safe physical
-endpoints or load capacity.
+For jaw calibration, choose **Begin jaw calibration**, then hold **Forward** or
+**Backward**. The jaw follows slowly while the button is held; letting go sends
+zero direction and releases torque on the next control update. Mouse/pointer
+release, pointer cancellation, lost capture, keyboard release, and page blur all
+release the control. A missing heartbeat releases torque after 350 ms. A jaw that
+fails to progress for 0.6 seconds stops with an error.
+
+The jaw uses a reduced torque limit of 150, speed setting of 100, and position
+targets only 10 encoder ticks ahead of the measured position. Direction labels
+refer to encoder direction, since open/closed depends on the mechanism. Stop
+before binding; software tests do not establish safe physical endpoints or load
+capacity. Run `node mayter_teleop/test_jaw_hold_ui.cjs` for the mocked browser
+release checks in addition to the Python tests.
 
 Jogging temporarily widens the jaw limits to find endpoints outside its previous
 calibration. Encoder wrap and travel more than 2048 ticks from the session's

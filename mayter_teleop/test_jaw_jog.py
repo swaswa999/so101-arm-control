@@ -19,43 +19,58 @@ class JawJog(unittest.TestCase):
   with tempfile.TemporaryDirectory() as tmp,patch('app.ROOT',Path(tmp)):
    (Path(tmp)/'calibration').mkdir();h.prepare_jaw()
    self.assertEqual(len(list((Path(tmp)/'calibration').glob('*.backup.json'))),1)
- def test_step_seeds_current_before_torque_and_does_not_snap_to_old_limit(self):
+ def test_hold_seeds_current_before_torque_and_does_not_snap_to_old_limit(self):
   h=self.hardware();self.prepare(h);self.events=[]
-  self.assertEqual(h.jog_jaw(-1),321)
+  with patch('app.time.monotonic',return_value=10):h.update_jaw(10,-1)
   self.assertLess(self.events.index((6,42,331)),self.events.index((6,40,1)))
   self.assertLess(self.events.index((6,48,150)),self.events.index((6,40,1)))
   self.assertEqual(self.events[-1],(6,42,321))
   self.assertTrue(all(e[0]==6 for e in self.events))
- def test_expired_heartbeat_releases_jaw(self):
-  h=self.hardware();self.prepare(h);h.jog_jaw(1)
-  with patch('app.time.monotonic',return_value=100):h.update_jaw(99)
-  self.assertEqual(self.regs[40],0);self.assertEqual(h.jaw_deadline,0)
- def test_deadline_releases_even_with_live_heartbeat(self):
-  h=self.hardware();self.prepare(h);h.jog_jaw(1)
-  with patch('app.time.monotonic',return_value=h.jaw_deadline+.01) as now:h.update_jaw(now.return_value)
+ def test_release_stops_jaw_on_next_control_tick(self):
+  h=self.hardware();self.prepare(h)
+  with patch('app.time.monotonic',return_value=10):
+   h.update_jaw(10,1);h.update_jaw(10,0)
+  self.assertEqual(self.regs[40],0);self.assertFalse(h.jaw_active)
+ def test_expired_heartbeat_releases_jaw_even_if_direction_stays_held(self):
+  h=self.hardware();self.prepare(h)
+  with patch('app.time.monotonic',return_value=10):h.update_jaw(10,1)
+  with patch('app.time.monotonic',return_value=10.4):h.update_jaw(10,1)
+  self.assertEqual(self.regs[40],0);self.assertFalse(h.jaw_active)
+ def test_hold_advances_with_actual_position_not_elapsed_time(self):
+  h=self.hardware();self.prepare(h)
+  with patch('app.time.monotonic',return_value=10):h.update_jaw(10,1)
+  self.regs[56]=339
+  with patch('app.time.monotonic',return_value=10.1):h.update_jaw(10.1,1)
+  self.assertEqual(self.regs[42],349)
+  self.assertEqual(self.events.count((6,40,1)),1)
+ def test_stalled_jaw_releases_torque(self):
+  h=self.hardware();self.prepare(h)
+  with patch('app.time.monotonic',return_value=10):h.update_jaw(10,1)
+  with patch('app.time.monotonic',return_value=10.7):
+   with self.assertRaisesRegex(RuntimeError,'progressing'):h.update_jaw(10.7,1)
   self.assertEqual(self.regs[40],0)
- def test_boundary_rejection_makes_no_writes(self):
+ def test_boundary_stops_without_commanding_out_of_range_position(self):
   h=self.hardware();self.prepare(h);self.regs[56]=4090;self.events=[]
-  with self.assertRaises(ValueError):h.jog_jaw(1)
-  self.assertEqual(self.events,[])
- def test_no_overlapping_steps(self):
-  h=self.hardware();self.prepare(h);h.jog_jaw(1);self.events=[]
-  with self.assertRaises(ValueError):h.jog_jaw(1)
-  self.assertEqual(self.events,[])
- def test_stop_restores_original_settings_after_step(self):
-  h=self.hardware();self.prepare(h);before=dict(h.jaw_settings);h.jog_jaw(1)
+  with patch('app.time.monotonic',return_value=10):
+   with self.assertRaises(RuntimeError):h.update_jaw(10,1)
+  self.assertFalse(any(addr==42 for _,addr,_ in self.events));self.assertEqual(self.regs[40],0)
+ def test_stop_restores_original_settings_after_hold(self):
+  h=self.hardware();self.prepare(h);before=dict(h.jaw_settings)
+  with patch('app.time.monotonic',return_value=10):h.update_jaw(10,1)
   self.assertEqual(h.close(),[])
   for addr,(_,value) in before.items():self.assertEqual(self.regs[addr],value)
   self.assertEqual(self.regs[40],0)
  def test_saved_limits_survive_cleanup(self):
-  h=self.hardware();self.prepare(h);h.jog_jaw(1)
+  h=self.hardware();self.prepare(h)
+  with patch('app.time.monotonic',return_value=10):h.update_jaw(10,1)
   h.jaw_settings[9]=(2,300);h.jaw_settings[11]=(2,1800)
   self.assertEqual(h.close(),[]);self.assertEqual((self.regs[9],self.regs[11]),(300,1800))
- def test_jog_only_in_calibration_and_fresh_heartbeat(self):
+ def test_hold_only_accepted_in_calibration(self):
   with patch.object(threading.Thread,'start'):c=Controller()
-  with self.assertRaises(ValueError):c.command('jaw_plus')
-  c.status['mode']='jaw_calibrating';c.hw=SimpleNamespace(jog_jaw=lambda d:self.fail('stale jog executed'))
-  with self.assertRaises(ValueError):c.command('jaw_plus')
+  with self.assertRaises(ValueError):c.controls({'jaw':1})
+  c.status['mode']='jaw_calibrating';c.controls({'jaw':1});self.assertEqual(c.jaw_direction,1)
+  c.controls({'jaw':0});self.assertEqual(c.jaw_direction,0)
+  with self.assertRaises(ValueError):c.controls({'jaw':2})
  def test_tools_only_does_not_connect_arms(self):
   h=self.hardware();calls=[];h.connect_cal=lambda:calls.append('connect');h.configure_tools=lambda:calls.append('tools')
   h.connect_tools();self.assertEqual(calls,['connect','tools']);self.assertIsNone(h.follower);self.assertIsNone(h.leader)
