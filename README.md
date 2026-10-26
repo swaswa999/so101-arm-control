@@ -127,3 +127,14 @@ calibration before running teleoperation. Mark Closed and Open, then Save.
 loose-motor panel remains available with
 `.lelab-venv/bin/python mayter_teleop/loose_motor.py` when the main controller is
 stopped. Only one controller may own the serial port at a time.
+
+## Startup responsiveness
+
+Arm dependencies preload on a separate thread. If they are still loading, Start
+reports that state without blocking tools-only controls or queuing a later arm
+start. Queued requests that time out are cancelled before they can execute.
+The serial controller disables optional Torch device-plugin autoload by default.
+
+If imports hang on macOS, inspect whether the environment files were offloaded
+by cloud storage. Restore the exact dependency versions before retesting; do not
+interpret a responsive status page as proof that the motor worker is responsive.

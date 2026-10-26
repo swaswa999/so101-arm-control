@@ -1,12 +1,39 @@
 """Direct arm teleop, two tool motors, and bounded jaw calibration steps."""
-import json,queue,threading,time,urllib.request,atexit,shutil,datetime
+import json,queue,threading,time,urllib.request,atexit,shutil,datetime,os
 from pathlib import Path
-from concurrent.futures import Future
+from concurrent.futures import Future,TimeoutError
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 ROOT=Path(__file__).resolve().parent.parent
 FOLLOWER='/dev/cu.usbmodem5C821107831';LEADER='/dev/cu.usbmodem5C821101051'
 CONTROLLER_VERSION='two-tools-jaw-jog-20261025'
 TOOL_IDS={'tire':7,'socket':8}
+
+_arm_support=None
+_arm_error=None
+_arm_loading=False
+_arm_lock=threading.Lock()
+
+def arm_support():
+ global _arm_loading
+ with _arm_lock:
+  if _arm_support is not None:return _arm_support
+  if _arm_error:raise ValueError('Arm software could not load: '+_arm_error)
+  if not _arm_loading:
+   _arm_loading=True
+   threading.Thread(target=_load_arm_support,daemon=True,name='arm-software-loader').start()
+ raise ValueError('Arm software is loading. Tools-only controls remain available. Try Start again once loading finishes.')
+
+def _load_arm_support():
+ global _arm_support,_arm_error
+ try:
+  # Serial teleoperation needs no external Torch device plugins. Avoid scanning
+  # unrelated installed-package metadata, which can block on offloaded files.
+  os.environ.setdefault('TORCH_DEVICE_BACKEND_AUTOLOAD','0')
+  from lerobot.robots.so_follower import SO101Follower,SO101FollowerConfig
+  from lerobot.teleoperators.so_leader import SO101Leader,SO101LeaderConfig
+  with _arm_lock:_arm_support=(SO101Follower,SO101FollowerConfig,SO101Leader,SO101LeaderConfig)
+ except Exception as e:
+  with _arm_lock:_arm_error=str(e)
 
 def held_speeds(held,now,last):
  if now-last>=.35:return {name:0 for name in TOOL_IDS}
@@ -106,8 +133,7 @@ class Hardware:
   if self.jaw_deadline and (time.monotonic()>=self.jaw_deadline or time.monotonic()-last_heartbeat>=.35):self.release_jaw()
   return self.read(6,56)
  def connect_teleop(self):
-  from lerobot.robots.so_follower import SO101Follower,SO101FollowerConfig
-  from lerobot.teleoperators.so_leader import SO101Leader,SO101LeaderConfig
+  SO101Follower,SO101FollowerConfig,SO101Leader,SO101LeaderConfig=arm_support()
   self.idle_lelab()
   self.follower=SO101Follower(SO101FollowerConfig(port=FOLLOWER,id='hiwonder_follower_fresh',calibration_dir=ROOT/'calibration/follower',use_degrees=True,max_relative_target=None,cameras={}))
   self.leader=SO101Leader(SO101LeaderConfig(port=LEADER,id='hiwonder_leader_fresh',calibration_dir=ROOT/'calibration/leader',use_degrees=True))
@@ -194,7 +220,11 @@ class Controller:
  def snapshot(self):
   with self.lock:return dict(self.status)
  def request(self,action):
-  f=Future();self.q.put((action,f));return f.result(timeout=15)
+  f=Future();self.q.put((action,f))
+  try:return f.result(timeout=15)
+  except TimeoutError:
+   f.cancel()
+   raise ValueError('Controller request timed out. Check the connection before trying again.')
  def controls(self,d):
   held={}
   for name in TOOL_IDS:
@@ -258,6 +288,7 @@ class Controller:
    self.status['jaw_saved']=new;self.stop()
   elif a in ('start','tools'):
    if self.status['mode']!='idle':raise ValueError('Stop the current session first')
+   if a=='start':arm_support()
    with self.lock:self.held={name:0 for name in TOOL_IDS}
    self.hw=Hardware()
    if a=='tools':self.hw.connect_tools()
@@ -272,7 +303,7 @@ class Controller:
    try:
     try:a,f=self.q.get_nowait()
     except queue.Empty:a=f=None
-    if a:
+    if a and f.set_running_or_notify_cancel():
      try:f.set_result(self.command(a))
      except ValueError as e:self.status['error']=str(e);f.set_exception(e)
      except Exception as e:self.status['error']=str(e);self.stop();f.set_exception(e)
@@ -317,6 +348,8 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__=='__main__':
  controller=Controller();atexit.register(controller.stop)
+ try:arm_support()
+ except ValueError:pass
  server=ThreadingHTTPServer(('127.0.0.1',8010),Handler)
  print('Mayter Teleop: http://127.0.0.1:8010 — motors idle until Start is pressed',flush=True)
  try:server.serve_forever()

@@ -104,7 +104,7 @@ class Controls(unittest.TestCase):
    def configure(self):events.append(('leader','configure'))
   h=Hardware();h.write=lambda mid,a,v,size=2:events.append(('tool',mid,a,v))
   modules={'lerobot.robots.so_follower':SimpleNamespace(SO101Follower=Follower,SO101FollowerConfig=lambda **kw:kw),'lerobot.teleoperators.so_leader':SimpleNamespace(SO101Leader=Leader,SO101LeaderConfig=lambda **kw:kw)}
-  with patch.dict('sys.modules',modules),patch.object(Hardware,'idle_lelab'):
+  with patch('app.arm_support',return_value=(Follower,lambda **kw:kw,Leader,lambda **kw:kw)),patch.object(Hardware,'idle_lelab'):
    h.connect_teleop()
   self.assertLess(events.index(('follower','torque_off')),events.index(('follower','calibration')))
   self.assertLess(events.index(('leader','torque_off')),events.index(('leader','calibration')))
