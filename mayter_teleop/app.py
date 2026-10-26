@@ -4,7 +4,7 @@ from pathlib import Path
 from concurrent.futures import Future
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 ROOT=Path(__file__).resolve().parent.parent
-FOLLOWER='/dev/cu.usbmodem5C821107831';LEADER='/dev/cu.usbmodem5B3E0915611'
+FOLLOWER='/dev/cu.usbmodem5C821107831';LEADER='/dev/cu.usbmodem5C821101051'
 CONTROLLER_VERSION='socket-only-20261020'
 TOOL_IDS={'socket':8}
 
