@@ -103,10 +103,14 @@ and the local modifications.
 ## Tool testing and jaw adjustment
 
 Use **Enable tools only** to test motors 7 and 8 without starting arm tracking.
-Each tool starts at a selected speed of 300 units, adjustable from 50 to 2000.
-Forward and Reverse run until that tool's Stop button is clicked. Page blur,
-hiding the page, or a stale heartbeat stops both tools. **Stop and release
-motors** ends the session and releases torque.
+Both tools use the configured maximum speed of 2000. Hold Left/Right for tire
+motor 7 and Up/Down for socket motor 8, or hold the corresponding on-screen
+buttons. Left is negative motor direction and Right is positive; verify which
+opens/closes the tire mechanism before use. Up is positive socket direction.
+Releasing a key/button, pointer cancellation, lost capture, page blur, hiding the
+page, or a stale heartbeat stops movement. Opposite directions held together
+command zero. **Stop and release motors** ends the session and releases torque.
+Run `node mayter_teleop/test_tool_hold_ui.cjs` for mocked tool input checks.
 
 For jaw calibration, choose **Begin jaw calibration**, then hold **Forward** or
 **Backward**. The jaw follows at the configured maximum speed while the button is held; letting go sends
