@@ -148,3 +148,10 @@ The serial controller disables optional Torch device-plugin autoload by default.
 If imports hang on macOS, inspect whether the environment files were offloaded
 by cloud storage. Restore the exact dependency versions before retesting; do not
 interpret a responsive status page as proof that the motor worker is responsive.
+
+The macOS launcher prefers the dedicated arm runtime at
+`~/Library/Application Support/Mayter/so101-runtime/bin/python` when installed,
+falling back to the project's `.lelab-venv`. This keeps robot dependencies away
+from Desktop cloud-offloading. Calibration and controller source stay in this
+project. `/status` reports `arm_software_ready` after the actual arm imports
+finish; this is software readiness, not a physical movement test.

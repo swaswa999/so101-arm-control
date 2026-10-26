@@ -226,7 +226,7 @@ class Controller:
   self.status={'controller_version':CONTROLLER_VERSION,'mode':'idle','error':None,'stop_error':None,'hz':0,'socket_speed':0,'tire_speed':0,'jaw_target':None,'connection_check':None,'jaw_position':None,'jaw_closed':None,'jaw_open':None}
   threading.Thread(target=self.run,daemon=True,name='motor-owner').start()
  def snapshot(self):
-  with self.lock:return dict(self.status)
+  with self.lock:return {**self.status,'arm_software_ready':_arm_support is not None}
  def request(self,action):
   f=Future();self.q.put((action,f))
   try:return f.result(timeout=15)
