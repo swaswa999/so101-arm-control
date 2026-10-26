@@ -12,12 +12,12 @@ class Controls(unittest.TestCase):
   for closed,opened in [(1500,1505),(1,4090),(-1,500)]:
    with self.assertRaises(ValueError):jaw_calibration(closed,opened,{})
  def test_release_stops_socket(self):
-  self.assertEqual(held_speeds({'tire':0,'socket':0},10,10),{'socket':0})
+  self.assertEqual(held_speeds({'tire':0,'socket':0},10,10),{'tire':0,'socket':0})
  def test_stale_hold_stops_socket(self):
-  self.assertEqual(held_speeds({'tire':1,'socket':-1},10,9),{'socket':0})
- def test_socket_direction_and_speed_ignores_disconnected_tire(self):
+  self.assertEqual(held_speeds({'tire':1,'socket':-1},10,9),{'tire':0,'socket':0})
+ def test_independent_tool_direction_and_speed(self):
   h={'tire':-1,'tire_speed':1000,'socket':1,'socket_speed':500}
-  self.assertEqual(held_speeds(h,10,10),{'socket':500})
+  self.assertEqual(held_speeds(h,10,10),{'tire':-1000,'socket':500})
   self.assertEqual(encode_velocity(-1000),32768+1000)
   self.assertEqual(encode_velocity(0),0)
  def test_cleanup_attempts_remaining_motors_after_fault(self):
@@ -32,23 +32,23 @@ class Controls(unittest.TestCase):
   bus=SimpleNamespace(is_connected=True,port='test',port_handler=SimpleNamespace(closePort=lambda:None),packet_handler=Packet(),motors={'a':SimpleNamespace(id=1),'b':SimpleNamespace(id=2)},disconnect=lambda x:None)
   h=Hardware();h.follower=SimpleNamespace(bus=bus)
   errors=h.close();self.assertIn(2,writes);self.assertTrue(any('motor 1' in e for e in errors))
- def test_old_page_cannot_command_disconnected_tire(self):
+ def test_controls_accept_both_tools(self):
   with patch.object(threading.Thread,'start'):controller=Controller()
   controller.controls({'tire':1,'tire_speed':2000,'socket':0})
-  self.assertEqual(controller.held,{'socket':0,'socket_speed':600})
- def test_only_socket_required_and_missing_socket_blocks_start(self):
+  self.assertEqual(controller.held,{'tire':1,'tire_speed':2000,'socket':0,'socket_speed':600})
+ def test_both_tools_required_and_missing_tool_blocks_start(self):
   calls=[]
   h=Hardware();h.port=object()
   h.packet=SimpleNamespace(ping=lambda p,i:(calls.append(i) or (777,0,0)))
-  h.check_tools();self.assertEqual(calls,[8])
+  h.check_tools();self.assertEqual(calls,[7,8])
   h.packet.ping=lambda p,i:(0,-3001,0)
-  with self.assertRaisesRegex(RuntimeError,'replacement must have a unique ID 8'):h.check_tools()
+  with self.assertRaisesRegex(RuntimeError,'unique configured ID'):h.check_tools()
  def test_socket_cleanup_verifies_off_and_never_addresses_tire(self):
   calls=[]
   h=Hardware();h.port=SimpleNamespace(is_open=True);h.tool_ids_checked={8}
   h.packet=SimpleNamespace(read1ByteTxRx=lambda p,i,a:(calls.append(('read',i,a)) or (1,0,0)),write1ByteTxRx=lambda p,i,a,v:(calls.append(('write',i,a)) or (0,0)),write2ByteTxRx=lambda p,i,a,v:(calls.append(('write',i,a)) or (0,0)))
   errors=h.close()
-  self.assertTrue(any('socket motor 8' in e for e in errors))
+  self.assertTrue(any('tool motor 8' in e for e in errors))
   self.assertTrue(all(c[1]==8 for c in calls))
  def test_stop_keeps_original_error_and_retains_unconfirmed_state(self):
   with patch.object(threading.Thread,'start'):controller=Controller()
@@ -72,7 +72,7 @@ class Controls(unittest.TestCase):
   with patch('scservo_sdk.PortHandler',Port),patch('scservo_sdk.PacketHandler',lambda v:Packet()),patch.object(Hardware,'idle_lelab'):
    report=Hardware().check_connections()
   self.assertTrue(report['all_expected_responded'])
-  self.assertNotIn(7,pinged)
+  self.assertIn(7,pinged)
   self.assertTrue(all(not p.is_open for p in opened))
  def test_failed_connection_check_does_not_claim_healthy(self):
   class Port:
@@ -103,12 +103,14 @@ class Controls(unittest.TestCase):
    def __init__(self,c):self.bus=Bus('leader');self.calibration={}
    def configure(self):events.append(('leader','configure'))
   h=Hardware();h.write=lambda mid,a,v,size=2:events.append(('tool',mid,a,v))
-  with patch('lerobot.robots.so_follower.SO101Follower',Follower),patch('lerobot.teleoperators.so_leader.SO101Leader',Leader),patch.object(Hardware,'idle_lelab'):
+  modules={'lerobot.robots.so_follower':SimpleNamespace(SO101Follower=Follower,SO101FollowerConfig=lambda **kw:kw),'lerobot.teleoperators.so_leader':SimpleNamespace(SO101Leader=Leader,SO101LeaderConfig=lambda **kw:kw)}
+  with patch.dict('sys.modules',modules),patch.object(Hardware,'idle_lelab'):
    h.connect_teleop()
   self.assertLess(events.index(('follower','torque_off')),events.index(('follower','calibration')))
   self.assertLess(events.index(('leader','torque_off')),events.index(('leader','calibration')))
   self.assertLess(events.index(('follower','Goal_Position')),events.index(('follower','torque_on')))
   self.assertLess(events.index(('tool',8,46,0)),events.index(('tool',8,40,1)))
-  self.assertTrue(all(e[1]==8 for e in events if e[0]=='tool'))
+  self.assertEqual({e[1] for e in events if e[0]=='tool'},{7,8})
+  self.assertLess(events.index(('tool',7,46,0)),events.index(('tool',7,40,1)))
 
 if __name__=='__main__':unittest.main()
