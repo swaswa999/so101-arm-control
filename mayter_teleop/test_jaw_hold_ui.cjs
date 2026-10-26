@@ -8,7 +8,7 @@ function element(id) {
 }
 let unblock;
 const context = vm.createContext({document:{getElementById:element,hidden:false,addEventListener(){}},window:{addEventListener(){}},setInterval(){},fetch:async(path,options)=>{
- if (path==='/status') return {json:async()=>({controller_version:'two-tools-jaw-hold-20261025',mode:'jaw_calibrating'})};
+ if (path==='/status') return {json:async()=>({controller_version:'two-tools-jaw-fast-20261025',mode:'jaw_calibrating'})};
  const body=JSON.parse(options.body);sent.push(body);
  if (body.jaw===1 && !unblock) await new Promise(resolve=>unblock=resolve);
  return {ok:true,json:async()=>({ok:true})};

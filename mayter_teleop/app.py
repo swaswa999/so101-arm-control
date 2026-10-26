@@ -5,8 +5,10 @@ from concurrent.futures import Future,TimeoutError
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 ROOT=Path(__file__).resolve().parent.parent
 FOLLOWER='/dev/cu.usbmodem5C821107831';LEADER='/dev/cu.usbmodem5C821101051'
-CONTROLLER_VERSION='two-tools-jaw-hold-20261025'
+CONTROLLER_VERSION='two-tools-jaw-fast-20261025'
 TOOL_IDS={'tire':7,'socket':8}
+JAW_SPEED=2000
+JAW_LOOKAHEAD=100
 
 _arm_support=None
 _arm_error=None
@@ -121,14 +123,14 @@ class Hardware:
    if self.jaw_active:self.release_jaw()
    return self.read(6,56)
   if self.jaw_settings is None:raise ValueError('Begin jaw calibration first')
-  current=self.read(6,56);target=current+direction*10
+  current=self.read(6,56);target=current+direction*JAW_LOOKAHEAD
   if not 0<=target<=4095 or abs(target-self.jaw_origin)>2048:
    self.release_jaw();raise RuntimeError('Jaw travel limit reached. Release the button and review the endpoint.')
   if not self.jaw_active:
    self.release_jaw();self.write(6,55,0,1)
    # Advance only a small distance ahead of the measured position while held.
    # Original settings are backed up and restored when calibration ends.
-   for address,value,size in [(9,0,2),(11,4095,2),(33,0,1),(41,10,1),(48,150,2),(46,100,2),(42,current,2)]:self.write(6,address,value,size)
+   for address,value,size in [(9,0,2),(11,4095,2),(33,0,1),(41,254,1),(48,150,2),(46,JAW_SPEED,2),(42,current,2)]:self.write(6,address,value,size)
    self.write(6,55,1,1)
    self.write(6,40,1,1);self.jaw_active=True
    self.jaw_progress=current;self.jaw_progress_time=time.monotonic()
@@ -319,7 +321,7 @@ class Controller:
     if self.status['mode']=='jaw_calibrating':
      with self.lock:direction=self.jaw_direction;last=self.last_heartbeat
      self.status['jaw_position']=self.hw.update_jaw(last,direction)
-     self.status['jaw_target']=self.status['jaw_position']+direction*10 if self.hw.jaw_active else None
+     self.status['jaw_target']=self.status['jaw_position']+direction*JAW_LOOKAHEAD if self.hw.jaw_active else None
     elif self.status['mode'] in ('teleop','tools'):
      with self.lock:held=dict(self.held);last=self.last_heartbeat
      if tick-last>1.0:raise RuntimeError('Control page disconnected; teleoperation stopped')

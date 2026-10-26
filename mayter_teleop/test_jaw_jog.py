@@ -24,7 +24,9 @@ class JawJog(unittest.TestCase):
   with patch('app.time.monotonic',return_value=10):h.update_jaw(10,-1)
   self.assertLess(self.events.index((6,42,331)),self.events.index((6,40,1)))
   self.assertLess(self.events.index((6,48,150)),self.events.index((6,40,1)))
-  self.assertEqual(self.events[-1],(6,42,321))
+  self.assertLess(self.events.index((6,46,2000)),self.events.index((6,40,1)))
+  self.assertLess(self.events.index((6,41,254)),self.events.index((6,40,1)))
+  self.assertEqual(self.events[-1],(6,42,231))
   self.assertTrue(all(e[0]==6 for e in self.events))
  def test_release_stops_jaw_on_next_control_tick(self):
   h=self.hardware();self.prepare(h)
@@ -41,7 +43,7 @@ class JawJog(unittest.TestCase):
   with patch('app.time.monotonic',return_value=10):h.update_jaw(10,1)
   self.regs[56]=339
   with patch('app.time.monotonic',return_value=10.1):h.update_jaw(10.1,1)
-  self.assertEqual(self.regs[42],349)
+  self.assertEqual(self.regs[42],439)
   self.assertEqual(self.events.count((6,40,1)),1)
  def test_stalled_jaw_releases_torque(self):
   h=self.hardware();self.prepare(h)

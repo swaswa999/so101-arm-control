@@ -109,14 +109,14 @@ hiding the page, or a stale heartbeat stops both tools. **Stop and release
 motors** ends the session and releases torque.
 
 For jaw calibration, choose **Begin jaw calibration**, then hold **Forward** or
-**Backward**. The jaw follows slowly while the button is held; letting go sends
+**Backward**. The jaw follows at the configured maximum speed while the button is held; letting go sends
 zero direction and releases torque on the next control update. Mouse/pointer
 release, pointer cancellation, lost capture, keyboard release, and page blur all
 release the control. A missing heartbeat releases torque after 350 ms. A jaw that
 fails to progress for 0.6 seconds stops with an error.
 
-The jaw uses a reduced torque limit of 150, speed setting of 100, and position
-targets only 10 encoder ticks ahead of the measured position. Direction labels
+The jaw uses a reduced torque limit of 150, speed setting of 2000 and acceleration setting of 254, and position
+targets 100 encoder ticks ahead of the measured position. Direction labels
 refer to encoder direction, since open/closed depends on the mechanism. Stop
 before binding; software tests do not establish safe physical endpoints or load
 capacity. Run `node mayter_teleop/test_jaw_hold_ui.cjs` for the mocked browser
